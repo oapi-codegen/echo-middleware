@@ -15,8 +15,10 @@
 package echomiddleware
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -24,7 +26,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/deepmap/oapi-codegen/pkg/testutil"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/labstack/echo/v4"
@@ -42,8 +43,18 @@ func doGet(t *testing.T, e *echo.Echo, rawURL string) *httptest.ResponseRecorder
 		t.Fatalf("Invalid url: %s", rawURL)
 	}
 
-	response := testutil.NewRequest().Get(u.RequestURI()).WithHost(u.Host).WithAcceptJson().GoWithHTTPHandler(t, e)
-	return response.Recorder
+	r, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		t.Fatalf("Could not construct a request: %s", rawURL)
+	}
+	r.Header.Set("accept", "application/json")
+	r.Header.Set("host", u.Host)
+
+	tt := httptest.NewRecorder()
+
+	e.ServeHTTP(tt, r)
+
+	return tt
 }
 
 func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody interface{}) *httptest.ResponseRecorder {
@@ -52,8 +63,24 @@ func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody interface{}) *ht
 		t.Fatalf("Invalid url: %s", rawURL)
 	}
 
-	response := testutil.NewRequest().Post(u.RequestURI()).WithHost(u.Host).WithJsonBody(jsonBody).GoWithHTTPHandler(t, e)
-	return response.Recorder
+	body, err := json.Marshal(jsonBody)
+	if err != nil {
+		t.Fatalf("Could not marshal request body: %v", err)
+	}
+
+	r, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("Could not construct a request for URL %s: %v", rawURL, err)
+	}
+	r.Header.Set("accept", "application/json")
+	r.Header.Set("content-type", "application/json")
+	r.Header.Set("host", u.Host)
+
+	tt := httptest.NewRecorder()
+
+	e.ServeHTTP(tt, r)
+
+	return tt
 }
 
 func TestOapiRequestValidator(t *testing.T) {
