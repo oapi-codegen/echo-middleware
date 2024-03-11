@@ -43,7 +43,7 @@ func doGet(t *testing.T, e *echo.Echo, rawURL string) *httptest.ResponseRecorder
 		t.Fatalf("Invalid url: %s", rawURL)
 	}
 
-	r, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	r, err := http.NewRequest(http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		t.Fatalf("Could not construct a request: %s", rawURL)
 	}
@@ -196,7 +196,6 @@ func TestOapiRequestValidator(t *testing.T) {
 	e.GET("/protected_resource", func(c echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
-
 	})
 
 	// Call a protected function to which we have access
@@ -211,7 +210,7 @@ func TestOapiRequestValidator(t *testing.T) {
 		called = true
 		return c.NoContent(http.StatusNoContent)
 	})
-	// Call a protected function to which we dont have access
+	// Call a protected function to which we don't have access
 	{
 		rec := doGet(t, e, "http://deepmap.ai/protected_resource2")
 		assert.Equal(t, http.StatusForbidden, rec.Code)
@@ -285,7 +284,7 @@ func TestOapiRequestValidatorWithOptionsMultiError(t *testing.T) {
 		called = false
 	}
 
-	// Let's send a request with a 2 missing parameters, it should return
+	// Let's send a request with 2 missing parameters, it should return
 	// a bad status
 	{
 		rec := doGet(t, e, "http://deepmap.ai/multiparamresource")
@@ -393,7 +392,7 @@ func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T)
 		called = false
 	}
 
-	// Let's send a request with a 2 missing parameters, it should return
+	// Let's send a request with 2 missing parameters, it should return
 	// a bad status
 	{
 		rec := doGet(t, e, "http://deepmap.ai/multiparamresource")
@@ -443,7 +442,6 @@ func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T)
 }
 
 func TestGetSkipperFromOptions(t *testing.T) {
-
 	options := new(Options)
 	assert.NotNil(t, getSkipperFromOptions(options))
 
