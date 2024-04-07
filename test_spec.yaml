@@ -16,7 +16,7 @@ paths:
             minimum: 10
             maximum: 100
       responses:
-        '200':
+        "200":
           description: success
           content:
             application/json:
@@ -29,7 +29,7 @@ paths:
     post:
       operationId: createResource
       responses:
-        '204':
+        "204":
           description: No content
       requestBody:
         required: true
@@ -39,6 +39,32 @@ paths:
               properties:
                 name:
                   type: string
+  /resource/maxlength/{param}:
+    get:
+      operationId: getMaxLengthResourceParameter
+      parameters:
+        - name: param
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 1
+      responses:
+        "204":
+          description: success
+  /resource/pattern/{param}:
+    get:
+      operationId: getPatternResourceParameter
+      parameters:
+        - name: param
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\+[1-9]+$'
+      responses:
+        "204":
+          description: success
   /protected_resource:
     get:
       operationId: getProtectedResource
@@ -46,7 +72,7 @@ paths:
         - BearerAuth:
             - someScope
       responses:
-        '204':
+        "204":
           description: no content
   /protected_resource2:
     get:
@@ -55,7 +81,7 @@ paths:
         - BearerAuth:
             - otherScope
       responses:
-        '204':
+        "204":
           description: no content
   /protected_resource_401:
     get:
@@ -64,7 +90,7 @@ paths:
         - BearerAuth:
             - unauthorized
       responses:
-        '401':
+        "401":
           description: no content
   /multiparamresource:
     get:
@@ -85,7 +111,7 @@ paths:
             minimum: 10
             maximum: 100
       responses:
-        '200':
+        "200":
           description: success
           content:
             application/json:
