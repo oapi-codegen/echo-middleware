@@ -57,7 +57,7 @@ func doGet(t *testing.T, e *echo.Echo, rawURL string) *httptest.ResponseRecorder
 	return tt
 }
 
-func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody interface{}) *httptest.ResponseRecorder {
+func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody any) *httptest.ResponseRecorder {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		t.Fatalf("Invalid url: %s", rawURL)
@@ -196,6 +196,7 @@ func TestOapiRequestValidator(t *testing.T) {
 	e.GET("/protected_resource", func(c echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
+
 	})
 
 	// Call a protected function to which we have access
@@ -442,6 +443,7 @@ func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T)
 }
 
 func TestGetSkipperFromOptions(t *testing.T) {
+
 	options := new(Options)
 	assert.NotNil(t, getSkipperFromOptions(options))
 

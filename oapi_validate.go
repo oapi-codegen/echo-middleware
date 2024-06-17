@@ -39,7 +39,7 @@ const (
 // OapiValidatorFromYamlFile is an Echo middleware function which validates incoming HTTP requests
 // to make sure that they conform to the given OAPI 3.0 specification. When
 // OAPI validation fails on the request, we return an HTTP/400.
-// Create validator middleware from a YAML file path.
+// Create validator middleware from a YAML file path
 func OapiValidatorFromYamlFile(path string) (echo.MiddlewareFunc, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -58,10 +58,10 @@ func OapiRequestValidator(swagger *openapi3.T) echo.MiddlewareFunc {
 	return OapiRequestValidatorWithOptions(swagger, nil)
 }
 
-// ErrorHandler is called when there is an error in validation.
+// ErrorHandler is called when there is an error in validation
 type ErrorHandler func(c echo.Context, err *echo.HTTPError) error
 
-// MultiErrorHandler is called when oapi returns a MultiError type.
+// MultiErrorHandler is called when oapi returns a MultiError type
 type MultiErrorHandler func(openapi3.MultiError) *echo.HTTPError
 
 // Options to customize request validation. These are passed through to
@@ -78,7 +78,7 @@ type Options struct {
 	Prefix                string
 }
 
-// OapiRequestValidatorWithOptions creates a validator from a swagger object, with validation options.
+// OapiRequestValidatorWithOptions creates a validator from a swagger object, with validation options
 func OapiRequestValidatorWithOptions(swagger *openapi3.T, options *Options) echo.MiddlewareFunc {
 	if swagger.Servers != nil && (options == nil || !options.SilenceServersWarning) {
 		log.Println("WARN: OapiRequestValidatorWithOptions called with an OpenAPI spec that has `Servers` set. This may lead to an HTTP 400 with `no matching operation was found` when sending a valid request, as the validator performs `Host` header validation. If you're expecting `Host` header validation, you can silence this warning by setting `Options.SilenceServersWarning = true`. See https://github.com/deepmap/oapi-codegen/issues/882 for more information.")
@@ -115,6 +115,7 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 	req.RequestURI = strings.TrimPrefix(req.RequestURI, options.Prefix)
 	req.URL.Path = strings.TrimPrefix(req.URL.Path, options.Prefix)
 	route, pathParams, err := router.FindRoute(req)
+
 	// We failed to find a matching route for the request.
 	if err != nil {
 		switch e := err.(type) {
@@ -208,7 +209,7 @@ func GetUserData(c context.Context) any {
 	return c.Value(UserDataKey)
 }
 
-// attempt to get the skipper from the options whether it is set or not.
+// attempt to get the skipper from the options whether it is set or not
 func getSkipperFromOptions(options *Options) echomiddleware.Skipper {
 	if options == nil {
 		return echomiddleware.DefaultSkipper
@@ -222,7 +223,7 @@ func getSkipperFromOptions(options *Options) echomiddleware.Skipper {
 }
 
 // attempt to get the MultiErrorHandler from the options. If it is not set,
-// return a default handler.
+// return a default handler
 func getMultiErrorHandlerFromOptions(options *Options) MultiErrorHandler {
 	if options == nil {
 		return defaultMultiErrorHandler
