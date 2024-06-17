@@ -70,11 +70,12 @@ type Options struct {
 	ErrorHandler      ErrorHandler
 	Options           openapi3filter.Options
 	ParamDecoder      openapi3filter.ContentParameterDecoder
-	UserData          interface{}
+	UserData          any
 	Skipper           echomiddleware.Skipper
 	MultiErrorHandler MultiErrorHandler
 	// SilenceServersWarning allows silencing a warning for https://github.com/deepmap/oapi-codegen/issues/882 that reports when an OpenAPI spec has `spec.Servers != nil`
 	SilenceServersWarning bool
+	Prefix                string
 }
 
 // OapiRequestValidatorWithOptions creates a validator from a swagger object, with validation options
@@ -111,6 +112,8 @@ func OapiRequestValidatorWithOptions(swagger *openapi3.T, options *Options) echo
 // of validating a request.
 func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options *Options) *echo.HTTPError {
 	req := ctx.Request()
+	req.RequestURI = strings.TrimPrefix(req.RequestURI, options.Prefix)
+	req.URL.Path = strings.TrimPrefix(req.URL.Path, options.Prefix)
 	route, pathParams, err := router.FindRoute(req)
 
 	// We failed to find a matching route for the request.
@@ -202,7 +205,7 @@ func GetEchoContext(c context.Context) echo.Context {
 	return eCtx
 }
 
-func GetUserData(c context.Context) interface{} {
+func GetUserData(c context.Context) any {
 	return c.Value(UserDataKey)
 }
 
@@ -234,7 +237,7 @@ func getMultiErrorHandlerFromOptions(options *Options) MultiErrorHandler {
 }
 
 // defaultMultiErrorHandler returns a StatusBadRequest (400) and a list
-// of all of the errors. This method is called if there are no other
+// of all the errors. This method is called if there are no other
 // methods defined on the options.
 func defaultMultiErrorHandler(me openapi3.MultiError) *echo.HTTPError {
 	return &echo.HTTPError{
