@@ -118,6 +118,10 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 	if err != nil {
 		switch e := err.(type) {
 		case *routers.RouteError:
+			// The path may exist on the server, but the method is not allowed.
+			if errors.Is(e, routers.ErrMethodNotAllowed) {
+				return echo.NewHTTPError(http.StatusMethodNotAllowed, e.Reason)
+			}
 			// We've got a bad request, the path requested doesn't match
 			// either server, or path, or something.
 			return echo.NewHTTPError(http.StatusNotFound, e.Reason)
