@@ -129,6 +129,18 @@ func TestOapiRequestValidator(t *testing.T) {
 		called = true
 		return nil
 	})
+	// add a Handler for an encoded path parameter
+	// this needs to be installed before calling the first doGet
+	// because of echo internals (maxParam)
+	e.GET("/resource/maxlength/:encoded", func(c echo.Context) error {
+		called = true
+		return c.NoContent(http.StatusNoContent)
+	})
+	e.GET("/resource/pattern/:encoded", func(c echo.Context) error {
+		called = true
+		return c.NoContent(http.StatusNoContent)
+	})
+
 	// Let's send the request to the wrong server, this should return 404
 	{
 		rec := doGet(t, e, "http://not.deepmap.ai/resource")
@@ -229,6 +241,43 @@ func TestOapiRequestValidator(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
 		assert.Equal(t, "test: code=401, message=Unauthorized", rec.Body.String())
 		assert.False(t, called, "Handler should not have been called")
+		called = false
+	}
+
+	// Let's send a request with an encoded parameter
+	// It should pass validation even though the parameter is encoded
+	// to 3 chars and the parameter is limited to maxLength: 1
+	{
+		rec := doGet(t, e, "http://deepmap.ai/resource/maxlength/%2B")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// Let's send a request with an unencoded parameter
+	// It should pass as well
+	{
+		rec := doGet(t, e, "http://deepmap.ai/resource/maxlength/+")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// Let's send a request with an encoded parameter
+	// It should pass validation
+	{
+		rec := doGet(t, e, "http://deepmap.ai/resource/pattern/%2B1234")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// Let's send a request with an unencoded parameter
+	// It should pass as well
+	{
+		rec := doGet(t, e, "http://deepmap.ai/resource/pattern/+1234")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
 		called = false
 	}
 }

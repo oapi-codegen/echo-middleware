@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -117,6 +118,10 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 	if err != nil {
 		switch e := err.(type) {
 		case *routers.RouteError:
+			// The path may exist on the server, but the method is not allowed.
+			if errors.Is(e, routers.ErrMethodNotAllowed) {
+				return echo.NewHTTPError(http.StatusMethodNotAllowed, e.Reason)
+			}
 			// We've got a bad request, the path requested doesn't match
 			// either server, or path, or something.
 			return echo.NewHTTPError(http.StatusNotFound, e.Reason)
@@ -125,6 +130,14 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 			// we don't want to crash the server, so handle the unexpected error.
 			return echo.NewHTTPError(http.StatusInternalServerError,
 				fmt.Sprintf("error validating route: %s", err.Error()))
+		}
+	}
+
+	// because gorillamux.NewRouter() uses mux.NewRouter().UseEncodedPath()
+	// we need to unescape the path parameters for openapi3filter
+	for k, v := range pathParams {
+		if v, err := url.PathUnescape(v); err == nil {
+			pathParams[k] = v
 		}
 	}
 
