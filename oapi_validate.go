@@ -46,7 +46,7 @@ func OapiValidatorFromYamlFile(path string) (echo.MiddlewareFunc, error) {
 	return OapiRequestValidator(spec), nil
 }
 
-// OapiRequestValidator creates a validator from an OpenAPI spec.
+// OapiRequestValidator Creates the middleware to validate that incoming requests match the given OpenAPI 3.x spec, with a default set of configuration.
 func OapiRequestValidator(spec *openapi3.T) echo.MiddlewareFunc {
 	return OapiRequestValidatorWithOptions(spec, nil)
 }
@@ -54,23 +54,39 @@ func OapiRequestValidator(spec *openapi3.T) echo.MiddlewareFunc {
 // ErrorHandler is called when there is an error in validation
 type ErrorHandler func(c echo.Context, err *echo.HTTPError) error
 
-// MultiErrorHandler is called when oapi returns a MultiError type
+// MultiErrorHandler is called when the OpenAPI filter returns an openapi3.MultiError (https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3#MultiError)
 type MultiErrorHandler func(openapi3.MultiError) *echo.HTTPError
 
 // Options to customize request validation. These are passed through to
 // openapi3filter.
 type Options struct {
-	ErrorHandler      ErrorHandler
-	Options           openapi3filter.Options
-	ParamDecoder      openapi3filter.ContentParameterDecoder
-	UserData          any
-	Skipper           echomiddleware.Skipper
+	// ErrorHandler is called when a validation error occurs.
+	//
+	// If not provided, `http.Error` will be called
+	ErrorHandler ErrorHandler
+	// Options contains any configuration for the underlying `openapi3filter`
+	Options openapi3filter.Options
+	// ParamDecoder is the openapi3filter.ContentParameterDecoder to be used for the decoding of the request body
+	//
+	// If unset, a default will be used
+	ParamDecoder openapi3filter.ContentParameterDecoder
+	// UserData is any user-specified data to inject into the context.Context, which is then passed in to the validation function.
+	//
+	// Set on the Context with the key `UserDataKey`.
+	UserData any
+	// Skipper an echo Skipper to allow skipping the middleware.
+	Skipper echomiddleware.Skipper
+	// MultiErrorHandler is called when there is an openapi3.MultiError (https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3#MultiError) returned by the `openapi3filter`.
+	//
+	// If not provided `defaultMultiErrorHandler` will be used.
 	MultiErrorHandler MultiErrorHandler
 	// SilenceServersWarning allows silencing a warning for https://github.com/oapi-codegen/oapi-codegen/issues/882 that reports when an OpenAPI spec has `spec.Servers != nil`
 	SilenceServersWarning bool
 }
 
-// OapiRequestValidatorWithOptions creates a validator from an OpenAPI spec, with validation options
+// OapiRequestValidatorWithOptions Creates the middleware to validate that incoming requests match the given OpenAPI 3.x spec, allowing explicit configuration.
+//
+// NOTE that this may panic if the OpenAPI spec isn't valid, or if it cannot be used to create the middleware
 func OapiRequestValidatorWithOptions(spec *openapi3.T, options *Options) echo.MiddlewareFunc {
 	if spec.Servers != nil && (options == nil || !options.SilenceServersWarning) {
 		log.Println("WARN: OapiRequestValidatorWithOptions called with an OpenAPI spec that has `Servers` set. This may lead to an HTTP 400 with `no matching operation was found` when sending a valid request, as the validator performs `Host` header validation. If you're expecting `Host` header validation, you can silence this warning by setting `Options.SilenceServersWarning = true`. See https://github.com/oapi-codegen/oapi-codegen/issues/882 for more information.")
