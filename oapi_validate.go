@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -155,6 +156,15 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 			// we don't want to crash the server, so handle the unexpected error.
 			return echo.NewHTTPError(http.StatusInternalServerError,
 				fmt.Sprintf("error validating route: %s", err.Error()))
+		}
+	}
+
+	// gorillamux uses UseEncodedPath(), so path parameters are returned in
+	// their percent-encoded form. Unescape them before passing to
+	// openapi3filter, which expects decoded values.
+	for k, v := range pathParams {
+		if unescaped, err := url.PathUnescape(v); err == nil {
+			pathParams[k] = unescaped
 		}
 	}
 

@@ -485,6 +485,86 @@ func TestOapiRequestValidatorWithPrefix(t *testing.T) {
 	}
 }
 
+func TestEncodedPathParams(t *testing.T) {
+	spec, err := openapi3.NewLoader().LoadFromData(testSchema)
+	require.NoError(t, err, "Error initializing OpenAPI spec")
+
+	e := echo.New()
+
+	options := Options{
+		SilenceServersWarning: true,
+	}
+
+	e.Use(OapiRequestValidatorWithOptions(spec, &options))
+
+	called := false
+
+	// Register handlers for parameterized paths. These must be registered
+	// before any requests are made so echo allocates enough param slots.
+	e.GET("/resource/maxlength/:param", func(c echo.Context) error {
+		called = true
+		return c.NoContent(http.StatusNoContent)
+	})
+	e.GET("/resource/pattern/:param", func(c echo.Context) error {
+		called = true
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	// Encoded "+" (%2B) — 3 chars encoded, but 1 char decoded.
+	// maxLength: 1 should pass because validation uses the decoded value.
+	{
+		rec := doGet(t, e, "http://test.hostname/resource/maxlength/%2B")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// Unencoded "+" in the same path — should also pass.
+	{
+		rec := doGet(t, e, "http://test.hostname/resource/maxlength/+")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// Two-char unencoded value exceeds maxLength: 1 — should be rejected.
+	{
+		rec := doGet(t, e, "http://test.hostname/resource/maxlength/ab")
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.False(t, called, "Handler should not have been called")
+	}
+
+	// Encoded value that decodes to two chars (%2B%2B -> "++") — should be rejected.
+	{
+		rec := doGet(t, e, "http://test.hostname/resource/maxlength/%2B%2B")
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.False(t, called, "Handler should not have been called")
+	}
+
+	// Pattern: ^\+[0-9]+$ — encoded "+1234" as "%2B1234" should pass.
+	{
+		rec := doGet(t, e, "http://test.hostname/resource/pattern/%2B1234")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// Unencoded "+1234" should also pass.
+	{
+		rec := doGet(t, e, "http://test.hostname/resource/pattern/+1234")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// Value that doesn't match pattern — should be rejected.
+	{
+		rec := doGet(t, e, "http://test.hostname/resource/pattern/nope")
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.False(t, called, "Handler should not have been called")
+	}
+}
+
 func TestGetSkipperFromOptions(t *testing.T) {
 
 	options := new(Options)
