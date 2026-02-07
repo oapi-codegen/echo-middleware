@@ -84,6 +84,9 @@ type Options struct {
 	SilenceServersWarning bool
 	// DoNotValidateServers ensures that there is no Host validation performed (see `SilenceServersWarning` and https://github.com/deepmap/oapi-codegen/issues/882 for more details)
 	DoNotValidateServers bool
+	// Prefix is stripped from the request path before validation. This is useful when the API is mounted under a sub-path
+	// (e.g. "/api") that isn't part of the OpenAPI spec's paths. The prefix must start with "/" if set.
+	Prefix string
 }
 
 // OapiRequestValidatorWithOptions Creates the middleware to validate that incoming requests match the given OpenAPI 3.x spec, allowing explicit configuration.
@@ -126,6 +129,14 @@ func OapiRequestValidatorWithOptions(spec *openapi3.T, options *Options) echo.Mi
 // of validating a request.
 func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options *Options) *echo.HTTPError {
 	req := ctx.Request()
+
+	if options != nil && options.Prefix != "" {
+		// Clone the request so downstream handlers still see the original path.
+		clone := req.Clone(req.Context())
+		clone.URL.Path = strings.TrimPrefix(clone.URL.Path, options.Prefix)
+		req = clone
+	}
+
 	route, pathParams, err := router.FindRoute(req)
 
 	// We failed to find a matching route for the request.
