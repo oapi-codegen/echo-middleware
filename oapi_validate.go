@@ -1,3 +1,10 @@
+// Provide HTTP middleware functionality to validate that incoming requests conform to a given OpenAPI 3.x specification.
+//
+// This provides middleware for an echo/v4 HTTP server.
+//
+// This package is a lightweight wrapper over https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3filter from https://pkg.go.dev/github.com/getkin/kin-openapi.
+//
+// This is _intended_ to be used with code that's generated through https://pkg.go.dev/github.com/oapi-codegen/oapi-codegen, but should work otherwise.
 package echomiddleware
 
 import (
