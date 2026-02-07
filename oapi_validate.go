@@ -46,16 +46,16 @@ func OapiValidatorFromYamlFile(path string) (echo.MiddlewareFunc, error) {
 		return nil, fmt.Errorf("error reading %s: %w", path, err)
 	}
 
-	swagger, err := openapi3.NewLoader().LoadFromData(data)
+	spec, err := openapi3.NewLoader().LoadFromData(data)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing %s as Swagger YAML: %w", path, err)
+		return nil, fmt.Errorf("error parsing %s as OpenAPI YAML: %w", path, err)
 	}
-	return OapiRequestValidator(swagger), nil
+	return OapiRequestValidator(spec), nil
 }
 
-// OapiRequestValidator creates a validator from a swagger object.
-func OapiRequestValidator(swagger *openapi3.T) echo.MiddlewareFunc {
-	return OapiRequestValidatorWithOptions(swagger, nil)
+// OapiRequestValidator creates a validator from an OpenAPI spec.
+func OapiRequestValidator(spec *openapi3.T) echo.MiddlewareFunc {
+	return OapiRequestValidatorWithOptions(spec, nil)
 }
 
 // ErrorHandler is called when there is an error in validation
@@ -77,13 +77,13 @@ type Options struct {
 	SilenceServersWarning bool
 }
 
-// OapiRequestValidatorWithOptions creates a validator from a swagger object, with validation options
-func OapiRequestValidatorWithOptions(swagger *openapi3.T, options *Options) echo.MiddlewareFunc {
-	if swagger.Servers != nil && (options == nil || !options.SilenceServersWarning) {
+// OapiRequestValidatorWithOptions creates a validator from an OpenAPI spec, with validation options
+func OapiRequestValidatorWithOptions(spec *openapi3.T, options *Options) echo.MiddlewareFunc {
+	if spec.Servers != nil && (options == nil || !options.SilenceServersWarning) {
 		log.Println("WARN: OapiRequestValidatorWithOptions called with an OpenAPI spec that has `Servers` set. This may lead to an HTTP 400 with `no matching operation was found` when sending a valid request, as the validator performs `Host` header validation. If you're expecting `Host` header validation, you can silence this warning by setting `Options.SilenceServersWarning = true`. See https://github.com/deepmap/oapi-codegen/issues/882 for more information.")
 	}
 
-	router, err := gorillamux.NewRouter(swagger)
+	router, err := gorillamux.NewRouter(spec)
 	if err != nil {
 		panic(err)
 	}

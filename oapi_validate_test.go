@@ -84,8 +84,8 @@ func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody interface{}) *ht
 }
 
 func TestOapiRequestValidator(t *testing.T) {
-	swagger, err := openapi3.NewLoader().LoadFromData(testSchema)
-	require.NoError(t, err, "Error initializing swagger")
+	spec, err := openapi3.NewLoader().LoadFromData(testSchema)
+	require.NoError(t, err, "Error initializing OpenAPI spec")
 
 	// Create a new echo router
 	e := echo.New()
@@ -119,7 +119,7 @@ func TestOapiRequestValidator(t *testing.T) {
 	}
 
 	// Install our OpenApi based request validator
-	e.Use(OapiRequestValidatorWithOptions(swagger, &options))
+	e.Use(OapiRequestValidatorWithOptions(spec, &options))
 
 	called := false
 
@@ -234,8 +234,8 @@ func TestOapiRequestValidator(t *testing.T) {
 }
 
 func TestOapiRequestValidatorWithOptionsMultiError(t *testing.T) {
-	swagger, err := openapi3.NewLoader().LoadFromData(testSchema)
-	require.NoError(t, err, "Error initializing swagger")
+	spec, err := openapi3.NewLoader().LoadFromData(testSchema)
+	require.NoError(t, err, "Error initializing OpenAPI spec")
 
 	// Create a new echo router
 	e := echo.New()
@@ -252,7 +252,7 @@ func TestOapiRequestValidatorWithOptionsMultiError(t *testing.T) {
 	}
 
 	// register middleware
-	e.Use(OapiRequestValidatorWithOptions(swagger, &options))
+	e.Use(OapiRequestValidatorWithOptions(spec, &options))
 
 	called := false
 
@@ -335,8 +335,8 @@ func TestOapiRequestValidatorWithOptionsMultiError(t *testing.T) {
 }
 
 func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T) {
-	swagger, err := openapi3.NewLoader().LoadFromData(testSchema)
-	require.NoError(t, err, "Error initializing swagger")
+	spec, err := openapi3.NewLoader().LoadFromData(testSchema)
+	require.NoError(t, err, "Error initializing OpenAPI spec")
 
 	// Create a new echo router
 	e := echo.New()
@@ -360,7 +360,7 @@ func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T)
 	}
 
 	// register middleware
-	e.Use(OapiRequestValidatorWithOptions(swagger, &options))
+	e.Use(OapiRequestValidatorWithOptions(spec, &options))
 
 	called := false
 
