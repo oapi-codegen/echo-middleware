@@ -146,6 +146,14 @@ func TestOapiRequestValidator(t *testing.T) {
 		called = false
 	}
 
+	// Send a request with the wrong HTTP method
+	{
+		rec := doPost(t, e, "http://deepmap.ai/multiparamresource", nil)
+		assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+		assert.False(t, called, "Handler should not have been called")
+		called = false
+	}
+
 	// Add a handler for the POST message
 	e.POST("/resource", func(c echo.Context) error {
 		called = true

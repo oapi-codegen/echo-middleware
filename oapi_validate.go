@@ -124,6 +124,10 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 
 	// We failed to find a matching route for the request.
 	if err != nil {
+		if errors.Is(err, routers.ErrMethodNotAllowed) {
+			return echo.NewHTTPError(http.StatusMethodNotAllowed)
+		}
+
 		switch e := err.(type) {
 		case *routers.RouteError:
 			// We've got a bad request, the path requested doesn't match

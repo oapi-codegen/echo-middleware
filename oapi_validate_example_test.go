@@ -141,6 +141,20 @@ components:
 	fmt.Println()
 
 	// ================================================================================
+	fmt.Println("# A request that uses the wrong HTTP method is rejected with HTTP 405 Method Not Allowed")
+	req, err = http.NewRequest(http.MethodDelete, "/resource", bytes.NewReader(data))
+	must(err)
+	req.Header.Set("Content-Type", "application/json")
+
+	rr = httptest.NewRecorder()
+
+	e.ServeHTTP(rr, req)
+
+	fmt.Printf("Received an HTTP %d response. Expected HTTP 405\n", rr.Code)
+	logResponseBody(rr)
+	fmt.Println()
+
+	// ================================================================================
 	fmt.Println("# A request that is well-formed is passed through to the Handler")
 	body = map[string]string{
 		"name": "Jamie",
@@ -183,6 +197,10 @@ components:
 	// # A request that is malformed is rejected with HTTP 400 Bad Request (because an invalid property is sent, and we have `additionalProperties: false`)
 	// Received an HTTP 400 response. Expected HTTP 400
 	// Response body: {"message":"request body has an error: doesn't match schema: property \"invalid\" is unsupported"}
+	//
+	// # A request that uses the wrong HTTP method is rejected with HTTP 405 Method Not Allowed
+	// Received an HTTP 405 response. Expected HTTP 405
+	// Response body: {"message":"Method Not Allowed"}
 	//
 	// # A request that is well-formed is passed through to the Handler
 	// POST /resource was called
