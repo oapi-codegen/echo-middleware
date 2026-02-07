@@ -57,7 +57,7 @@ func doGet(t *testing.T, e *echo.Echo, rawURL string) *httptest.ResponseRecorder
 	return tt
 }
 
-func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody interface{}) *httptest.ResponseRecorder {
+func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody any) *httptest.ResponseRecorder {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		t.Fatalf("Invalid url: %s", rawURL)

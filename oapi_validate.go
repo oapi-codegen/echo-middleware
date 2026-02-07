@@ -70,7 +70,7 @@ type Options struct {
 	ErrorHandler      ErrorHandler
 	Options           openapi3filter.Options
 	ParamDecoder      openapi3filter.ContentParameterDecoder
-	UserData          interface{}
+	UserData          any
 	Skipper           echomiddleware.Skipper
 	MultiErrorHandler MultiErrorHandler
 	// SilenceServersWarning allows silencing a warning for https://github.com/deepmap/oapi-codegen/issues/882 that reports when an OpenAPI spec has `spec.Servers != nil`
@@ -202,7 +202,7 @@ func GetEchoContext(c context.Context) echo.Context {
 	return eCtx
 }
 
-func GetUserData(c context.Context) interface{} {
+func GetUserData(c context.Context) any {
 	return c.Value(UserDataKey)
 }
 
