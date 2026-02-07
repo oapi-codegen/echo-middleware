@@ -39,6 +39,32 @@ paths:
               properties:
                 name:
                   type: string
+  /resource/maxlength/{param}:
+    get:
+      operationId: getMaxLengthResourceParameter
+      parameters:
+        - name: param
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 1
+      responses:
+        '204':
+          description: success
+  /resource/pattern/{param}:
+    get:
+      operationId: getPatternResourceParameter
+      parameters:
+        - name: param
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\+[0-9]+$'
+      responses:
+        '204':
+          description: success
   /protected_resource:
     get:
       operationId: getProtectedResource
