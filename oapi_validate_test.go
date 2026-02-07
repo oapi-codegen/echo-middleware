@@ -1,17 +1,3 @@
-// Copyright 2019 DeepMap, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package echomiddleware
 
 import (
@@ -57,7 +43,7 @@ func doGet(t *testing.T, e *echo.Echo, rawURL string) *httptest.ResponseRecorder
 	return tt
 }
 
-func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody interface{}) *httptest.ResponseRecorder {
+func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody any) *httptest.ResponseRecorder {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		t.Fatalf("Invalid url: %s", rawURL)
@@ -84,8 +70,8 @@ func doPost(t *testing.T, e *echo.Echo, rawURL string, jsonBody interface{}) *ht
 }
 
 func TestOapiRequestValidator(t *testing.T) {
-	swagger, err := openapi3.NewLoader().LoadFromData(testSchema)
-	require.NoError(t, err, "Error initializing swagger")
+	spec, err := openapi3.NewLoader().LoadFromData(testSchema)
+	require.NoError(t, err, "Error initializing OpenAPI spec")
 
 	// Create a new echo router
 	e := echo.New()
@@ -119,7 +105,7 @@ func TestOapiRequestValidator(t *testing.T) {
 	}
 
 	// Install our OpenApi based request validator
-	e.Use(OapiRequestValidatorWithOptions(swagger, &options))
+	e.Use(OapiRequestValidatorWithOptions(spec, &options))
 
 	called := false
 
@@ -156,6 +142,14 @@ func TestOapiRequestValidator(t *testing.T) {
 	{
 		rec := doGet(t, e, "http://deepmap.ai/resource?id=foo")
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.False(t, called, "Handler should not have been called")
+		called = false
+	}
+
+	// Send a request with the wrong HTTP method
+	{
+		rec := doPost(t, e, "http://deepmap.ai/multiparamresource", nil)
+		assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 		assert.False(t, called, "Handler should not have been called")
 		called = false
 	}
@@ -234,8 +228,8 @@ func TestOapiRequestValidator(t *testing.T) {
 }
 
 func TestOapiRequestValidatorWithOptionsMultiError(t *testing.T) {
-	swagger, err := openapi3.NewLoader().LoadFromData(testSchema)
-	require.NoError(t, err, "Error initializing swagger")
+	spec, err := openapi3.NewLoader().LoadFromData(testSchema)
+	require.NoError(t, err, "Error initializing OpenAPI spec")
 
 	// Create a new echo router
 	e := echo.New()
@@ -252,7 +246,7 @@ func TestOapiRequestValidatorWithOptionsMultiError(t *testing.T) {
 	}
 
 	// register middleware
-	e.Use(OapiRequestValidatorWithOptions(swagger, &options))
+	e.Use(OapiRequestValidatorWithOptions(spec, &options))
 
 	called := false
 
@@ -335,8 +329,8 @@ func TestOapiRequestValidatorWithOptionsMultiError(t *testing.T) {
 }
 
 func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T) {
-	swagger, err := openapi3.NewLoader().LoadFromData(testSchema)
-	require.NoError(t, err, "Error initializing swagger")
+	spec, err := openapi3.NewLoader().LoadFromData(testSchema)
+	require.NoError(t, err, "Error initializing OpenAPI spec")
 
 	// Create a new echo router
 	e := echo.New()
@@ -360,7 +354,7 @@ func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T)
 	}
 
 	// register middleware
-	e.Use(OapiRequestValidatorWithOptions(swagger, &options))
+	e.Use(OapiRequestValidatorWithOptions(spec, &options))
 
 	called := false
 

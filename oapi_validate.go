@@ -1,17 +1,10 @@
-// Copyright 2019 DeepMap, Inc.
+// Provide HTTP middleware functionality to validate that incoming requests conform to a given OpenAPI 3.x specification.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// This provides middleware for an echo/v4 HTTP server.
 //
-// http://www.apache.org/licenses/LICENSE-2.0
+// This package is a lightweight wrapper over https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3filter from https://pkg.go.dev/github.com/getkin/kin-openapi.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
+// This is _intended_ to be used with code that's generated through https://pkg.go.dev/github.com/oapi-codegen/oapi-codegen, but should work otherwise.
 package echomiddleware
 
 import (
@@ -46,44 +39,66 @@ func OapiValidatorFromYamlFile(path string) (echo.MiddlewareFunc, error) {
 		return nil, fmt.Errorf("error reading %s: %w", path, err)
 	}
 
-	swagger, err := openapi3.NewLoader().LoadFromData(data)
+	spec, err := openapi3.NewLoader().LoadFromData(data)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing %s as Swagger YAML: %w", path, err)
+		return nil, fmt.Errorf("error parsing %s as OpenAPI YAML: %w", path, err)
 	}
-	return OapiRequestValidator(swagger), nil
+	return OapiRequestValidator(spec), nil
 }
 
-// OapiRequestValidator creates a validator from a swagger object.
-func OapiRequestValidator(swagger *openapi3.T) echo.MiddlewareFunc {
-	return OapiRequestValidatorWithOptions(swagger, nil)
+// OapiRequestValidator Creates the middleware to validate that incoming requests match the given OpenAPI 3.x spec, with a default set of configuration.
+func OapiRequestValidator(spec *openapi3.T) echo.MiddlewareFunc {
+	return OapiRequestValidatorWithOptions(spec, nil)
 }
 
 // ErrorHandler is called when there is an error in validation
 type ErrorHandler func(c echo.Context, err *echo.HTTPError) error
 
-// MultiErrorHandler is called when oapi returns a MultiError type
+// MultiErrorHandler is called when the OpenAPI filter returns an openapi3.MultiError (https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3#MultiError)
 type MultiErrorHandler func(openapi3.MultiError) *echo.HTTPError
 
 // Options to customize request validation. These are passed through to
 // openapi3filter.
 type Options struct {
-	ErrorHandler      ErrorHandler
-	Options           openapi3filter.Options
-	ParamDecoder      openapi3filter.ContentParameterDecoder
-	UserData          interface{}
-	Skipper           echomiddleware.Skipper
+	// ErrorHandler is called when a validation error occurs.
+	//
+	// If not provided, `http.Error` will be called
+	ErrorHandler ErrorHandler
+	// Options contains any configuration for the underlying `openapi3filter`
+	Options openapi3filter.Options
+	// ParamDecoder is the openapi3filter.ContentParameterDecoder to be used for the decoding of the request body
+	//
+	// If unset, a default will be used
+	ParamDecoder openapi3filter.ContentParameterDecoder
+	// UserData is any user-specified data to inject into the context.Context, which is then passed in to the validation function.
+	//
+	// Set on the Context with the key `UserDataKey`.
+	UserData any
+	// Skipper an echo Skipper to allow skipping the middleware.
+	Skipper echomiddleware.Skipper
+	// MultiErrorHandler is called when there is an openapi3.MultiError (https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3#MultiError) returned by the `openapi3filter`.
+	//
+	// If not provided `defaultMultiErrorHandler` will be used.
 	MultiErrorHandler MultiErrorHandler
-	// SilenceServersWarning allows silencing a warning for https://github.com/deepmap/oapi-codegen/issues/882 that reports when an OpenAPI spec has `spec.Servers != nil`
+	// SilenceServersWarning allows silencing a warning for https://github.com/oapi-codegen/oapi-codegen/issues/882 that reports when an OpenAPI spec has `spec.Servers != nil`
 	SilenceServersWarning bool
+	// DoNotValidateServers ensures that there is no Host validation performed (see `SilenceServersWarning` and https://github.com/deepmap/oapi-codegen/issues/882 for more details)
+	DoNotValidateServers bool
 }
 
-// OapiRequestValidatorWithOptions creates a validator from a swagger object, with validation options
-func OapiRequestValidatorWithOptions(swagger *openapi3.T, options *Options) echo.MiddlewareFunc {
-	if swagger.Servers != nil && (options == nil || !options.SilenceServersWarning) {
-		log.Println("WARN: OapiRequestValidatorWithOptions called with an OpenAPI spec that has `Servers` set. This may lead to an HTTP 400 with `no matching operation was found` when sending a valid request, as the validator performs `Host` header validation. If you're expecting `Host` header validation, you can silence this warning by setting `Options.SilenceServersWarning = true`. See https://github.com/deepmap/oapi-codegen/issues/882 for more information.")
+// OapiRequestValidatorWithOptions Creates the middleware to validate that incoming requests match the given OpenAPI 3.x spec, allowing explicit configuration.
+//
+// NOTE that this may panic if the OpenAPI spec isn't valid, or if it cannot be used to create the middleware
+func OapiRequestValidatorWithOptions(spec *openapi3.T, options *Options) echo.MiddlewareFunc {
+	if options != nil && options.DoNotValidateServers {
+		spec.Servers = nil
 	}
 
-	router, err := gorillamux.NewRouter(swagger)
+	if spec.Servers != nil && (options == nil || !options.SilenceServersWarning) {
+		log.Println("WARN: OapiRequestValidatorWithOptions called with an OpenAPI spec that has `Servers` set. This may lead to an HTTP 400 with `no matching operation was found` when sending a valid request, as the validator performs `Host` header validation. If you're expecting `Host` header validation, you can silence this warning by setting `Options.SilenceServersWarning = true`. See https://github.com/oapi-codegen/oapi-codegen/issues/882 for more information.")
+	}
+
+	router, err := gorillamux.NewRouter(spec)
 	if err != nil {
 		panic(err)
 	}
@@ -115,6 +130,10 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 
 	// We failed to find a matching route for the request.
 	if err != nil {
+		if errors.Is(err, routers.ErrMethodNotAllowed) {
+			return echo.NewHTTPError(http.StatusMethodNotAllowed)
+		}
+
 		switch e := err.(type) {
 		case *routers.RouteError:
 			// We've got a bad request, the path requested doesn't match
@@ -202,7 +221,7 @@ func GetEchoContext(c context.Context) echo.Context {
 	return eCtx
 }
 
-func GetUserData(c context.Context) interface{} {
+func GetUserData(c context.Context) any {
 	return c.Value(UserDataKey)
 }
 
