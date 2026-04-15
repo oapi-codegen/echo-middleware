@@ -1,6 +1,6 @@
 module github.com/oapi-codegen/echo-middleware/v5
 
-go 1.26.2
+go 1.25.0
 
 require (
 	github.com/getkin/kin-openapi v0.135.0
