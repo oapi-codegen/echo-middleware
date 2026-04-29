@@ -24,11 +24,6 @@ import (
 	"github.com/oapi-codegen/echo-middleware/internal/validation"
 )
 
-const (
-	EchoContextKey = validation.EchoContextKey
-	UserDataKey    = validation.UserDataKey
-)
-
 // OapiValidatorFromYamlFile is an Echo middleware function which validates incoming HTTP requests
 // to make sure that they conform to the given OAPI 3.0 specification. When
 // OAPI validation fails on the request, we return an HTTP/400.
@@ -151,9 +146,9 @@ func ValidateRequestFromContext(c echo.Context, router routers.Router, options *
 	}
 
 	// Build validation context with Echo context and user data
-	requestContext := context.WithValue(context.Background(), EchoContextKey, c) //nolint:staticcheck
+	requestContext := context.WithValue(req.Context(), validation.EchoContextKey, c) //nolint:staticcheck
 	if options != nil && options.UserData != nil {
-		requestContext = context.WithValue(requestContext, UserDataKey, options.UserData) //nolint:staticcheck
+		requestContext = context.WithValue(requestContext, validation.UserDataKey, options.UserData) //nolint:staticcheck
 	}
 
 	// Perform OpenAPI validation
@@ -175,6 +170,8 @@ func ValidateRequestFromContext(c echo.Context, router routers.Router, options *
 					return httpErr
 				}
 			}
+			// No security error matched a known structured type;
+			// fall through to return the generic validation error below
 		}
 
 		return &echo.HTTPError{
@@ -190,7 +187,7 @@ func ValidateRequestFromContext(c echo.Context, router routers.Router, options *
 // GetEchoContext gets the echo context from within requests. It returns
 // nil if not found or wrong type.
 func GetEchoContext(c context.Context) echo.Context {
-	iface := c.Value(EchoContextKey)
+	iface := c.Value(validation.EchoContextKey)
 	if iface == nil {
 		return nil
 	}
@@ -202,7 +199,7 @@ func GetEchoContext(c context.Context) echo.Context {
 }
 
 func GetUserData(c context.Context) any {
-	return c.Value(UserDataKey)
+	return c.Value(validation.UserDataKey)
 }
 
 // attempt to get the skipper from the options whether it is set or not
