@@ -14,8 +14,8 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/labstack/echo/v4"
-	echomiddleware "github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	echomiddleware "github.com/labstack/echo/v5/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,7 +79,7 @@ func TestOapiRequestValidator(t *testing.T) {
 	// Set up an authenticator to check authenticated function. It will allow
 	// access to "someScope", but disallow others.
 	options := Options{
-		ErrorHandler: func(c echo.Context, err *echo.HTTPError) error {
+		ErrorHandler: func(c *echo.Context, err *echo.HTTPError) error {
 			return c.String(err.Code, "test: "+err.Error())
 		},
 		Options: openapi3filter.Options{
@@ -111,7 +111,7 @@ func TestOapiRequestValidator(t *testing.T) {
 
 	// Install a request handler for /resource. We want to make sure it doesn't
 	// get called.
-	e.GET("/resource", func(c echo.Context) error {
+	e.GET("/resource", func(c *echo.Context) error {
 		called = true
 		return nil
 	})
@@ -155,7 +155,7 @@ func TestOapiRequestValidator(t *testing.T) {
 	}
 
 	// Add a handler for the POST message
-	e.POST("/resource", func(c echo.Context) error {
+	e.POST("/resource", func(c *echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
 	})
@@ -187,7 +187,7 @@ func TestOapiRequestValidator(t *testing.T) {
 		called = false
 	}
 
-	e.GET("/protected_resource", func(c echo.Context) error {
+	e.GET("/protected_resource", func(c *echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
 
@@ -201,7 +201,7 @@ func TestOapiRequestValidator(t *testing.T) {
 		called = false
 	}
 
-	e.GET("/protected_resource2", func(c echo.Context) error {
+	e.GET("/protected_resource2", func(c *echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
 	})
@@ -213,7 +213,7 @@ func TestOapiRequestValidator(t *testing.T) {
 		called = false
 	}
 
-	e.GET("/protected_resource_401", func(c echo.Context) error {
+	e.GET("/protected_resource_401", func(c *echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
 	})
@@ -252,7 +252,7 @@ func TestOapiRequestValidatorWithOptionsMultiError(t *testing.T) {
 
 	// Install a request handler for /resource. We want to make sure it doesn't
 	// get called.
-	e.GET("/multiparamresource", func(c echo.Context) error {
+	e.GET("/multiparamresource", func(c *echo.Context) error {
 		called = true
 		return nil
 	})
@@ -345,11 +345,7 @@ func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T)
 			MultiError:            true,
 		},
 		MultiErrorHandler: func(me openapi3.MultiError) *echo.HTTPError {
-			return &echo.HTTPError{
-				Code:     http.StatusTeapot,
-				Message:  me.Error(),
-				Internal: me,
-			}
+			return echo.NewHTTPError(http.StatusTeapot, me.Error())
 		},
 	}
 
@@ -360,7 +356,7 @@ func TestOapiRequestValidatorWithOptionsMultiErrorAndCustomHandler(t *testing.T)
 
 	// Install a request handler for /resource. We want to make sure it doesn't
 	// get called.
-	e.GET("/multiparamresource", func(c echo.Context) error {
+	e.GET("/multiparamresource", func(c *echo.Context) error {
 		called = true
 		return nil
 	})
@@ -454,7 +450,7 @@ func TestOapiRequestValidatorWithPrefix(t *testing.T) {
 	called := false
 
 	// Register handler under the prefixed path (as echo sees it)
-	e.GET("/api/resource", func(c echo.Context) error {
+	e.GET("/api/resource", func(c *echo.Context) error {
 		called = true
 		// The original request path should be preserved for the handler
 		assert.Equal(t, "/api/resource", c.Request().URL.Path)
@@ -501,11 +497,11 @@ func TestEncodedPathParams(t *testing.T) {
 
 	// Register handlers for parameterized paths. These must be registered
 	// before any requests are made so echo allocates enough param slots.
-	e.GET("/resource/maxlength/:param", func(c echo.Context) error {
+	e.GET("/resource/maxlength/:param", func(c *echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
 	})
-	e.GET("/resource/pattern/:param", func(c echo.Context) error {
+	e.GET("/resource/pattern/:param", func(c *echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
 	})

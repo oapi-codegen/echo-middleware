@@ -11,7 +11,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	middleware "github.com/oapi-codegen/echo-middleware"
 )
 
@@ -79,13 +79,13 @@ components:
 	spec.Servers = nil
 
 	e := echo.New()
-	e.POST("/resource", func(c echo.Context) error {
+	e.POST("/resource", func(c *echo.Context) error {
 		fmt.Printf("%s /resource was called\n", c.Request().Method)
 
 		return c.NoContent(http.StatusNoContent)
 	})
 
-	e.GET("/protected_resource", func(c echo.Context) error {
+	e.GET("/protected_resource", func(c *echo.Context) error {
 		// NOTE that we're setting up our `authenticationFunc` (below) to /never/ allow any requests in - so if we get a response from this endpoint, our `authenticationFunc` hasn't correctly worked
 		return c.NoContent(http.StatusNoContent)
 	})
@@ -261,7 +261,7 @@ paths:
 	spec.Servers = nil
 
 	e := echo.New()
-	e.POST("/resource", func(c echo.Context) error {
+	e.POST("/resource", func(c *echo.Context) error {
 		fmt.Printf("%s /resource was called\n", c.Request().Method)
 
 		return c.NoContent(http.StatusNoContent)
@@ -272,7 +272,7 @@ paths:
 		return fmt.Errorf("this check always fails - don't let anyone in!")
 	}
 
-	errorHandlerFunc := func(c echo.Context, err *echo.HTTPError) error {
+	errorHandlerFunc := func(c *echo.Context, err *echo.HTTPError) error {
 		fmt.Printf("ErrorHandler: An HTTP %d was returned by the middleware with error message: %s\n", err.Code, err.Message)
 		return c.String(err.Code, "This was rewritten by the ErrorHandler")
 	}

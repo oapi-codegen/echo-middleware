@@ -32,7 +32,7 @@ spec, _ := openapi3.NewLoader().LoadFromData([]byte(rawSpec))
 spec.Servers = nil
 
 e := echo.New()
-e.POST("/resource", func(c echo.Context) error {
+e.POST("/resource", func(c *echo.Context) error {
     fmt.Printf("%s /resource was called\n", c.Request().Method)
 
     return c.NoContent(http.StatusNoContent)
@@ -56,8 +56,8 @@ e.Use(mw)
 
 | Version | Supported? |
 | -- | -- |
-| `github.com/labstack/echo/v4` | ✅ |
-| `github.com/labstack/echo/v5` | ❌ [Issue](https://github.com/oapi-codegen/echo-middleware/issues/37) |
+| `github.com/labstack/echo/v4` | ❌ |
+| `github.com/labstack/echo/v5` | ✅ |
 
 
 ### "This doesn't support ..." / "I think it's a bug that ..."

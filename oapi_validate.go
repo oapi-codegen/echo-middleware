@@ -1,6 +1,6 @@
 // Provide HTTP middleware functionality to validate that incoming requests conform to a given OpenAPI 3.x specification.
 //
-// This provides middleware for an echo/v4 HTTP server.
+// This provides middleware for an echo/v5 HTTP server.
 //
 // This package is a lightweight wrapper over https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3filter from https://pkg.go.dev/github.com/getkin/kin-openapi.
 //
@@ -21,8 +21,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
-	"github.com/labstack/echo/v4"
-	echomiddleware "github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	echomiddleware "github.com/labstack/echo/v5/middleware"
 )
 
 const (
@@ -53,7 +53,7 @@ func OapiRequestValidator(spec *openapi3.T) echo.MiddlewareFunc {
 }
 
 // ErrorHandler is called when there is an error in validation
-type ErrorHandler func(c echo.Context, err *echo.HTTPError) error
+type ErrorHandler func(c *echo.Context, err *echo.HTTPError) error
 
 // MultiErrorHandler is called when the OpenAPI filter returns an openapi3.MultiError (https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3#MultiError)
 type MultiErrorHandler func(openapi3.MultiError) *echo.HTTPError
@@ -109,7 +109,7 @@ func OapiRequestValidatorWithOptions(spec *openapi3.T, options *Options) echo.Mi
 
 	skipper := getSkipperFromOptions(options)
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			if skipper(c) {
 				return next(c)
 			}
@@ -128,7 +128,7 @@ func OapiRequestValidatorWithOptions(spec *openapi3.T, options *Options) echo.Mi
 
 // ValidateRequestFromContext is called from the middleware above and actually does the work
 // of validating a request.
-func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options *Options) *echo.HTTPError {
+func ValidateRequestFromContext(ctx *echo.Context, router routers.Router, options *Options) *echo.HTTPError {
 	req := ctx.Request()
 
 	if options != nil && options.Prefix != "" {
@@ -143,7 +143,7 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 	// We failed to find a matching route for the request.
 	if err != nil {
 		if errors.Is(err, routers.ErrMethodNotAllowed) {
-			return echo.NewHTTPError(http.StatusMethodNotAllowed)
+			return echo.NewHTTPError(http.StatusMethodNotAllowed, http.StatusText(http.StatusMethodNotAllowed))
 		}
 
 		switch e := err.(type) {
@@ -154,8 +154,8 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 		default:
 			// This should never happen today, but if our upstream code changes,
 			// we don't want to crash the server, so handle the unexpected error.
-			return echo.NewHTTPError(http.StatusInternalServerError,
-				fmt.Sprintf("error validating route: %s", err.Error()))
+			return newHTTPError(http.StatusInternalServerError,
+				fmt.Sprintf("error validating route: %s", err.Error()), err)
 		}
 	}
 
@@ -198,31 +198,22 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 			// Split up the verbose error by lines and return the first one
 			// openapi errors seem to be multi-line with a decent message on the first
 			errorLines := strings.Split(e.Error(), "\n")
-			return &echo.HTTPError{
-				Code:     http.StatusBadRequest,
-				Message:  errorLines[0],
-				Internal: err,
-			}
+			return newHTTPError(http.StatusBadRequest, errorLines[0], err)
 		case *openapi3filter.SecurityRequirementsError:
 			for _, err := range e.Errors {
-				httpErr, ok := err.(*echo.HTTPError)
-				if ok {
+				var httpErr *echo.HTTPError
+				if errors.As(err, &httpErr) {
 					return httpErr
 				}
+				if status := echo.StatusCode(err); status != 0 {
+					return echo.NewHTTPError(status, err.Error())
+				}
 			}
-			return &echo.HTTPError{
-				Code:     http.StatusForbidden,
-				Message:  e.Error(),
-				Internal: err,
-			}
+			return newHTTPError(http.StatusForbidden, e.Error(), err)
 		default:
 			// This should never happen today, but if our upstream code changes,
 			// we don't want to crash the server, so handle the unexpected error.
-			return &echo.HTTPError{
-				Code:     http.StatusInternalServerError,
-				Message:  fmt.Sprintf("error validating request: %s", err),
-				Internal: err,
-			}
+			return newHTTPError(http.StatusInternalServerError, fmt.Sprintf("error validating request: %s", err), err)
 		}
 	}
 	return nil
@@ -230,12 +221,12 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 
 // GetEchoContext gets the echo context from within requests. It returns
 // nil if not found or wrong type.
-func GetEchoContext(c context.Context) echo.Context {
+func GetEchoContext(c context.Context) *echo.Context {
 	iface := c.Value(EchoContextKey)
 	if iface == nil {
 		return nil
 	}
-	eCtx, ok := iface.(echo.Context)
+	eCtx, ok := iface.(*echo.Context)
 	if !ok {
 		return nil
 	}
@@ -244,6 +235,18 @@ func GetEchoContext(c context.Context) echo.Context {
 
 func GetUserData(c context.Context) any {
 	return c.Value(UserDataKey)
+}
+
+func newHTTPError(code int, message string, err error) *echo.HTTPError {
+	httpErr := echo.NewHTTPError(code, message)
+	if err == nil {
+		return httpErr
+	}
+	wrapped, ok := httpErr.Wrap(err).(*echo.HTTPError)
+	if !ok {
+		return httpErr
+	}
+	return wrapped
 }
 
 // attempt to get the skipper from the options whether it is set or not
@@ -277,9 +280,5 @@ func getMultiErrorHandlerFromOptions(options *Options) MultiErrorHandler {
 // of all of the errors. This method is called if there are no other
 // methods defined on the options.
 func defaultMultiErrorHandler(me openapi3.MultiError) *echo.HTTPError {
-	return &echo.HTTPError{
-		Code:     http.StatusBadRequest,
-		Message:  me.Error(),
-		Internal: me,
-	}
+	return newHTTPError(http.StatusBadRequest, me.Error(), me)
 }
