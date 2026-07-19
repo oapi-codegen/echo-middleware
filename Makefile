@@ -30,3 +30,6 @@ test:
 tidy:
 	@echo "tidy..."
 	go mod tidy
+
+# the CI scripts require a rule by this name
+tidy-ci: tidy
