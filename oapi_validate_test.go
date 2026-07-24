@@ -190,7 +190,6 @@ func TestOapiRequestValidator(t *testing.T) {
 	e.GET("/protected_resource", func(c echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
-
 	})
 
 	// Call a protected function to which we have access
@@ -453,6 +452,10 @@ func TestOapiRequestValidatorWithPrefix(t *testing.T) {
 
 	called := false
 
+	type testBody struct {
+		Msg string
+	}
+
 	// Register handler under the prefixed path (as echo sees it)
 	e.GET("/api/resource", func(c echo.Context) error {
 		called = true
@@ -460,10 +463,30 @@ func TestOapiRequestValidatorWithPrefix(t *testing.T) {
 		assert.Equal(t, "/api/resource", c.Request().URL.Path)
 		return c.NoContent(http.StatusOK)
 	})
+	e.POST("/api/resource", func(c echo.Context) error {
+		called = true
+		// The original request path should be preserved for the handler
+		assert.Equal(t, "/api/resource", c.Request().URL.Path)
+		req := c.Request()
+		data, err := io.ReadAll(req.Body)
+		require.NoError(t, err, "Reading POST body")
+		assert.Equal(t, "{\"Msg\":\"testbody\"}", string(data))
+		return c.NoContent(http.StatusOK)
+	})
 
 	// A request to /api/resource should validate against /resource in the spec
 	{
 		rec := doGet(t, e, "http://test.hostname/api/resource")
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// A POST request to /api/resource should validate against /resource in the spec and have a specific body
+	{
+		rec := doPost(t, e, "http://test.hostname/api/resource", testBody{
+			Msg: "testbody",
+		})
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, called, "Handler should have been called")
 		called = false
@@ -566,7 +589,6 @@ func TestEncodedPathParams(t *testing.T) {
 }
 
 func TestGetSkipperFromOptions(t *testing.T) {
-
 	options := new(Options)
 	assert.NotNil(t, getSkipperFromOptions(options))
 
