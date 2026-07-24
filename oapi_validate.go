@@ -136,10 +136,13 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 		clone := req.Clone(req.Context())
 		clone.URL.Path = strings.TrimPrefix(clone.URL.Path, options.Prefix)
 		req = clone
+		defer func() {
+			ctx.Request().Body = clone.Body
+			ctx.Request().GetBody = clone.GetBody
+		}()
 	}
 
 	route, pathParams, err := router.FindRoute(req)
-
 	// We failed to find a matching route for the request.
 	if err != nil {
 		if errors.Is(err, routers.ErrMethodNotAllowed) {
