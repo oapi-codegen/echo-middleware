@@ -88,6 +88,16 @@ type Options struct {
 	// Prefix is stripped from the request path before validation. This is useful when the API is mounted under a sub-path
 	// (e.g. "/api") that isn't part of the OpenAPI spec's paths. The prefix must start with "/" if set.
 	Prefix string
+	// DiscardValidatedValue turns off openapi3filter.Options.KeepValidatedValue,
+	// which this middleware enables by default. With it enabled, the request body
+	// seen by handlers exposes the value that was validated through a
+	// ValidatedValue() method, so a handler (for example an oapi-codegen strict
+	// server) can bind that value instead of decoding the body a second time.
+	// Set this to drop the decoded value after validation, for instance to limit
+	// memory retention for very large request bodies.
+	//
+	// Options.Options.KeepValidatedValue is overridden by this setting.
+	DiscardValidatedValue bool
 }
 
 // OapiRequestValidatorWithOptions Creates the middleware to validate that incoming requests match the given OpenAPI 3.x spec, allowing explicit configuration.
@@ -127,7 +137,9 @@ func OapiRequestValidatorWithOptions(spec *openapi3.T, options *Options) echo.Mi
 }
 
 // ValidateRequestFromContext is called from the middleware above and actually does the work
-// of validating a request.
+// of validating a request. A nil options validates with the defaults, which, as
+// with a non-nil options, include openapi3filter.Options.KeepValidatedValue (see
+// Options.DiscardValidatedValue).
 func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options *Options) *echo.HTTPError {
 	req := ctx.Request()
 
@@ -192,6 +204,7 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 		Request:    req,
 		PathParams: pathParams,
 		Route:      route,
+		Options:    filterOptions(options),
 	}
 
 	// Pass the Echo context into the request validator, so that any callbacks
@@ -199,7 +212,6 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 	requestContext := context.WithValue(context.Background(), EchoContextKey, ctx) //nolint:staticcheck
 
 	if options != nil {
-		validationInput.Options = &options.Options
 		validationInput.ParamDecoder = options.ParamDecoder
 		requestContext = context.WithValue(requestContext, UserDataKey, options.UserData) //nolint:staticcheck
 	}
@@ -264,6 +276,20 @@ func GetEchoContext(c context.Context) echo.Context {
 
 func GetUserData(c context.Context) any {
 	return c.Value(UserDataKey)
+}
+
+// filterOptions returns the openapi3filter.Options to validate a request with:
+// a copy of options.Options, so the caller's struct is never modified, with
+// KeepValidatedValue enabled unless options.DiscardValidatedValue is set. With
+// nil options, KeepValidatedValue is enabled and everything else is left at
+// its default.
+func filterOptions(options *Options) *openapi3filter.Options {
+	if options == nil {
+		return &openapi3filter.Options{KeepValidatedValue: true}
+	}
+	filterOpts := options.Options
+	filterOpts.KeepValidatedValue = !options.DiscardValidatedValue
+	return &filterOpts
 }
 
 // attempt to get the skipper from the options whether it is set or not
