@@ -740,6 +740,100 @@ func TestPrefixKeepValidatedValue(t *testing.T) {
 	assert.True(t, called, "Handler should have been called")
 }
 
+// TestKeepValidatedValueDefault checks that openapi3filter's
+// KeepValidatedValue is enabled by default, so the handler's request body
+// exposes the validated value, that DiscardValidatedValue turns it off, and
+// that the caller's Options are not modified.
+func TestKeepValidatedValueDefault(t *testing.T) {
+	const body = `{"name":"Marcin"}`
+
+	tests := []struct {
+		name    string
+		options *Options // nil means OapiRequestValidator(spec)
+		// wantValue is whether the handler's body should implement
+		// ValidatedValue().
+		wantValue bool
+	}{
+		{
+			name:      "no options",
+			wantValue: true,
+		},
+		{
+			name:      "empty options",
+			options:   &Options{},
+			wantValue: true,
+		},
+		{
+			name:      "DiscardValidatedValue",
+			options:   &Options{DiscardValidatedValue: true},
+			wantValue: false,
+		},
+		{
+			name: "DiscardValidatedValue overrides openapi3filter KeepValidatedValue",
+			options: &Options{
+				DiscardValidatedValue: true,
+				Options:               openapi3filter.Options{KeepValidatedValue: true},
+			},
+			wantValue: false,
+		},
+		{
+			// The body is not validated, so there is no validated value to
+			// keep, but the request must still go through untouched.
+			name: "ExcludeRequestBody",
+			options: &Options{
+				Options: openapi3filter.Options{ExcludeRequestBody: true},
+			},
+			wantValue: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, err := openapi3.NewLoader().LoadFromData(testSchema)
+			require.NoError(t, err, "Error initializing OpenAPI spec")
+
+			var callerOpts openapi3filter.Options
+			e := echo.New()
+			if tt.options == nil {
+				e.Use(OapiRequestValidator(spec))
+			} else {
+				tt.options.SilenceServersWarning = true
+				callerOpts = tt.options.Options
+				e.Use(OapiRequestValidatorWithOptions(spec, tt.options))
+			}
+
+			called := false
+			e.POST("/resource", func(c echo.Context) error {
+				called = true
+				vv, ok := c.Request().Body.(interface{ ValidatedValue() any })
+				if tt.wantValue {
+					if assert.True(t, ok, "request body should implement ValidatedValue(), got %T", c.Request().Body) {
+						assert.Equal(t, map[string]any{"name": "Marcin"}, vv.ValidatedValue())
+					}
+				} else {
+					assert.False(t, ok, "request body should not implement ValidatedValue(), got %T", c.Request().Body)
+				}
+				data, err := io.ReadAll(c.Request().Body)
+				require.NoError(t, err)
+				assert.Equal(t, body, string(data))
+				return c.NoContent(http.StatusNoContent)
+			})
+
+			r := httptest.NewRequest(http.MethodPost, "http://test.hostname/resource", strings.NewReader(body))
+			r.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, r)
+
+			assert.Equal(t, http.StatusNoContent, rec.Code)
+			assert.True(t, called, "Handler should have been called")
+			if tt.options != nil {
+				assert.Equal(t, callerOpts.KeepValidatedValue, tt.options.Options.KeepValidatedValue,
+					"the caller's openapi3filter.Options should not be modified")
+			}
+		})
+	}
+}
+
 // TestPrefixEncodedPathParams checks that a percent-encoded path parameter
 // still routes under a Prefix: URL.RawPath must be trimmed along with
 // URL.Path, and both restored for the handler.

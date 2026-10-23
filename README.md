@@ -50,6 +50,14 @@ e.Use(mw)
 // now all HTTP routes will be handled by the middleware, and any requests that are invalid will be rejected
 ```
 
+### The validated request body
+
+This middleware enables `openapi3filter.Options.KeepValidatedValue` by default. After a request body passes validation, the `c.Request().Body` seen by handlers implements `interface{ ValidatedValue() any }`, returning the decoded value that was validated (schema defaults included), and the body can still be read as usual. This lets a handler, such as an `oapi-codegen` strict server that supports it, bind exactly the value that was validated rather than decoding the body a second time, which closes gaps where a second decode could disagree with validation (for example, `encoding/json` matching object keys case-insensitively, so `{"role":"user","ROLE":"admin"}` validates as `role: user` but binds as `Role: "admin"`).
+
+To opt out, for instance to limit memory retention for very large request bodies, set `Options.DiscardValidatedValue: true`. This takes precedence over `Options.Options.KeepValidatedValue`.
+
+Any middleware that runs after the validator and replaces the request body (decompression, size limiting, logging wrappers, ...) hides the validated value from handlers, so such middleware belongs before the validator.
+
 ## FAQs
 
 ### What versions of Echo does this support?
