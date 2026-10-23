@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -190,7 +191,6 @@ func TestOapiRequestValidator(t *testing.T) {
 	e.GET("/protected_resource", func(c echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusNoContent)
-
 	})
 
 	// Call a protected function to which we have access
@@ -453,6 +453,10 @@ func TestOapiRequestValidatorWithPrefix(t *testing.T) {
 
 	called := false
 
+	type testBody struct {
+		Msg string
+	}
+
 	// Register handler under the prefixed path (as echo sees it)
 	e.GET("/api/resource", func(c echo.Context) error {
 		called = true
@@ -460,10 +464,30 @@ func TestOapiRequestValidatorWithPrefix(t *testing.T) {
 		assert.Equal(t, "/api/resource", c.Request().URL.Path)
 		return c.NoContent(http.StatusOK)
 	})
+	e.POST("/api/resource", func(c echo.Context) error {
+		called = true
+		// The original request path should be preserved for the handler
+		assert.Equal(t, "/api/resource", c.Request().URL.Path)
+		req := c.Request()
+		data, err := io.ReadAll(req.Body)
+		require.NoError(t, err, "Reading POST body")
+		assert.Equal(t, "{\"Msg\":\"testbody\"}", string(data))
+		return c.NoContent(http.StatusOK)
+	})
 
 	// A request to /api/resource should validate against /resource in the spec
 	{
 		rec := doGet(t, e, "http://test.hostname/api/resource")
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		called = false
+	}
+
+	// A POST request to /api/resource should validate against /resource in the spec and have a specific body
+	{
+		rec := doPost(t, e, "http://test.hostname/api/resource", testBody{
+			Msg: "testbody",
+		})
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, called, "Handler should have been called")
 		called = false
@@ -480,6 +504,277 @@ func TestOapiRequestValidatorWithPrefix(t *testing.T) {
 	// An out-of-spec parameter should still be rejected
 	{
 		rec := doGet(t, e, "http://test.hostname/api/resource?id=500")
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.False(t, called, "Handler should not have been called")
+	}
+}
+
+// prefixSpec is used by the Options.Prefix tests below. It has no servers, so
+// no Host validation is performed.
+const prefixSpec = `
+openapi: "3.0.0"
+info:
+  title: prefix
+  version: 1.0.0
+paths:
+  /thing:
+    post:
+      operationId: createThing
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '204':
+          description: ok
+  /defaulted:
+    post:
+      operationId: createDefaulted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                count:
+                  type: integer
+                  default: 7
+      responses:
+        '204':
+          description: ok
+  /items/{id}:
+    get:
+      operationId: getItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z]/[a-z]$'
+      responses:
+        '204':
+          description: ok
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+`
+
+func loadPrefixSpec(t *testing.T) *openapi3.T {
+	t.Helper()
+	spec, err := openapi3.NewLoader().LoadFromData([]byte(prefixSpec))
+	require.NoError(t, err, "Error initializing OpenAPI spec")
+	return spec
+}
+
+// TestPrefixWithSecurityKeepsRequestBody covers issue #49: with a Prefix and
+// a security requirement, openapi3filter reads the body for the
+// AuthenticationFunc and for body validation, and the handler must still get
+// the complete body, a matching ContentLength and the original path.
+func TestPrefixWithSecurityKeepsRequestBody(t *testing.T) {
+	spec := loadPrefixSpec(t)
+	e := echo.New()
+
+	const body = `{"name":"x"}`
+
+	authCalled := false
+	e.Use(OapiRequestValidatorWithOptions(spec, &Options{
+		Prefix: "/api",
+		Options: openapi3filter.Options{
+			AuthenticationFunc: func(ctx context.Context, input *openapi3filter.AuthenticationInput) error {
+				authCalled = true
+				// The prefix is trimmed in place on the live request during
+				// validation, so the echo request seen here has the trimmed path.
+				assert.Equal(t, "/thing", GetEchoContext(ctx).Request().URL.Path)
+
+				// The AuthenticationFunc can read the body too.
+				data, err := io.ReadAll(input.RequestValidationInput.Request.Body)
+				require.NoError(t, err)
+				assert.Equal(t, body, string(data))
+
+				if input.RequestValidationInput.Request.Header.Get("Authorization") != "Bearer token" {
+					return echo.ErrUnauthorized
+				}
+				return nil
+			},
+		},
+	}))
+
+	var (
+		called  bool
+		gotBody []byte
+		gotLen  int64
+		gotPath string
+	)
+	e.POST("/api/thing", func(c echo.Context) error {
+		called = true
+		req := c.Request()
+		gotPath = req.URL.Path
+		gotLen = req.ContentLength
+		var err error
+		gotBody, err = io.ReadAll(req.Body)
+		require.NoError(t, err)
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	newRequest := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/api/thing", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		return r
+	}
+
+	// Authorized: the handler sees the exact body, its length and the
+	// original, untrimmed path.
+	{
+		r := newRequest()
+		r.Header.Set("Authorization", "Bearer token")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, r)
+
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, authCalled, "AuthenticationFunc should have been called")
+		assert.True(t, called, "Handler should have been called")
+		assert.Equal(t, body, string(gotBody))
+		assert.Equal(t, int64(len(body)), gotLen)
+		assert.Equal(t, "/api/thing", gotPath)
+		assert.Equal(t, "/api/thing", r.URL.Path)
+	}
+
+	// Unauthorized: the handler must not run, and the path is still restored.
+	{
+		authCalled, called = false, false
+		r := newRequest()
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, r)
+
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
+		assert.True(t, authCalled, "AuthenticationFunc should have been called")
+		assert.False(t, called, "Handler should not have been called")
+		assert.Equal(t, "/api/thing", r.URL.Path)
+	}
+}
+
+// TestPrefixKeepsRewrittenBody checks that when openapi3filter applies schema
+// defaults and rewrites the body, the handler gets the rewritten body with a
+// ContentLength that matches it.
+func TestPrefixKeepsRewrittenBody(t *testing.T) {
+	spec := loadPrefixSpec(t)
+	e := echo.New()
+	e.Use(OapiRequestValidatorWithOptions(spec, &Options{Prefix: "/api"}))
+
+	var (
+		called  bool
+		gotBody []byte
+		gotLen  int64
+	)
+	e.POST("/api/defaulted", func(c echo.Context) error {
+		called = true
+		gotLen = c.Request().ContentLength
+		var err error
+		gotBody, err = io.ReadAll(c.Request().Body)
+		require.NoError(t, err)
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	const body = `{"name":"x"}`
+	r := httptest.NewRequest(http.MethodPost, "/api/defaulted", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, r)
+
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+	assert.True(t, called, "Handler should have been called")
+	assert.JSONEq(t, `{"name":"x","count":7}`, string(gotBody))
+	assert.Equal(t, int64(len(gotBody)), gotLen, "ContentLength should match the rewritten body")
+	assert.NotEqual(t, int64(len(body)), gotLen, "ContentLength should not be the original length")
+}
+
+// TestPrefixKeepValidatedValue checks that the body wrapper set by
+// openapi3filter.Options.KeepValidatedValue reaches the handler.
+func TestPrefixKeepValidatedValue(t *testing.T) {
+	spec := loadPrefixSpec(t)
+	e := echo.New()
+	e.Use(OapiRequestValidatorWithOptions(spec, &Options{
+		Prefix: "/api",
+		Options: openapi3filter.Options{
+			KeepValidatedValue: true,
+		},
+	}))
+
+	called := false
+	e.POST("/api/defaulted", func(c echo.Context) error {
+		called = true
+		vv, ok := c.Request().Body.(interface{ ValidatedValue() any })
+		if assert.True(t, ok, "request body should implement ValidatedValue(), got %T", c.Request().Body) {
+			value, isMap := vv.ValidatedValue().(map[string]any)
+			if assert.True(t, isMap, "validated value should be a map, got %T", vv.ValidatedValue()) {
+				assert.Equal(t, "x", value["name"])
+				assert.Contains(t, value, "count", "validated value should include the default")
+			}
+		}
+		data, err := io.ReadAll(c.Request().Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"name":"x","count":7}`, string(data))
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	r := httptest.NewRequest(http.MethodPost, "/api/defaulted", strings.NewReader(`{"name":"x"}`))
+	r.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, r)
+
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+	assert.True(t, called, "Handler should have been called")
+}
+
+// TestPrefixEncodedPathParams checks that a percent-encoded path parameter
+// still routes under a Prefix: URL.RawPath must be trimmed along with
+// URL.Path, and both restored for the handler.
+func TestPrefixEncodedPathParams(t *testing.T) {
+	spec := loadPrefixSpec(t)
+	e := echo.New()
+	e.Use(OapiRequestValidatorWithOptions(spec, &Options{Prefix: "/api"}))
+
+	var (
+		called     bool
+		gotPath    string
+		gotRawPath string
+	)
+	e.GET("/api/items/:id", func(c echo.Context) error {
+		called = true
+		gotPath = c.Request().URL.Path
+		gotRawPath = c.Request().URL.RawPath
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	// %2F decodes to "/", so the parameter is "a/b", which matches the
+	// pattern. Without trimming RawPath, the router would see the decoded
+	// path /items/a/b and find no route.
+	{
+		rec := doGet(t, e, "http://test.hostname/api/items/a%2Fb")
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.True(t, called, "Handler should have been called")
+		assert.Equal(t, "/api/items/a/b", gotPath)
+		assert.Equal(t, "/api/items/a%2Fb", gotRawPath)
+		called = false
+	}
+
+	// A value that does not match the pattern is still rejected.
+	{
+		rec := doGet(t, e, "http://test.hostname/api/items/ab")
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
 		assert.False(t, called, "Handler should not have been called")
 	}
@@ -566,7 +861,6 @@ func TestEncodedPathParams(t *testing.T) {
 }
 
 func TestGetSkipperFromOptions(t *testing.T) {
-
 	options := new(Options)
 	assert.NotNil(t, getSkipperFromOptions(options))
 
