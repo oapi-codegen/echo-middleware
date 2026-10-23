@@ -132,17 +132,34 @@ func ValidateRequestFromContext(ctx echo.Context, router routers.Router, options
 	req := ctx.Request()
 
 	if options != nil && options.Prefix != "" {
-		// Clone the request so downstream handlers still see the original path.
-		clone := req.Clone(req.Context())
-		clone.URL.Path = strings.TrimPrefix(clone.URL.Path, options.Prefix)
-		req = clone
+		// Trim the prefix in place rather than on a clone: Request.Clone copies
+		// the Body reference, so openapi3filter would drain the original
+		// request's body and put a fresh reader (and, with KeepValidatedValue,
+		// the validated value, plus an updated ContentLength when defaults are
+		// applied) back onto the clone only, leaving the handler a drained
+		// body. Validating the live request means everything openapi3filter
+		// writes lands on the request the handler sees.
+		//
+		// RawPath is trimmed too, so percent-encoded path parameters under the
+		// prefix still route correctly.
+		//
+		// The deferred restore runs before this function returns, and so
+		// before the next handler, which therefore still sees the original
+		// path. Note that an AuthenticationFunc reading
+		// GetEchoContext(ctx).Request().URL.Path during validation sees the
+		// trimmed path.
+		path, rawPath := req.URL.Path, req.URL.RawPath
+		req.URL.Path = strings.TrimPrefix(path, options.Prefix)
+		if rawPath != "" {
+			req.URL.RawPath = strings.TrimPrefix(rawPath, options.Prefix)
+		}
 		defer func() {
-			ctx.Request().Body = clone.Body
-			ctx.Request().GetBody = clone.GetBody
+			req.URL.Path, req.URL.RawPath = path, rawPath
 		}()
 	}
 
 	route, pathParams, err := router.FindRoute(req)
+
 	// We failed to find a matching route for the request.
 	if err != nil {
 		if errors.Is(err, routers.ErrMethodNotAllowed) {
